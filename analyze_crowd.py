@@ -14,6 +14,20 @@ import math
 # Load models
 @st.cache_resource
 def load_models():
+    """Load and initialize various machine learning models.
+
+    This function initializes YOLO models for object detection and pose
+    estimation, as well as an LSTM model for crowd behavior analysis. If
+    there is an issue loading the LSTM model, it will raise a warning and
+    return None for that model.
+
+    Returns:
+        tuple: A tuple containing three elements:
+            1. A YOLO model for object detection.
+            2. A YOLO model for pose estimation.
+            3. The LSTM model if successfully loaded; otherwise, None.
+    """
+
     yolo_model = YOLO("yolov8n.pt")  # Object detection model
     pose_model = YOLO("yolov8n-pose.pt")  # Pose detection model
     try:
@@ -55,6 +69,26 @@ class QLearningAgent:
         self.epsilon = exploration_rate
 
     def get_state(self, density, speed, variance, movement_uniformity, pose_variance):
+        """Get state bins based on given parameters.
+
+        This function calculates and returns state bins for density, speed,
+        variance, movement uniformity, and pose variance. Each parameter is
+        discretized into a bin based on its value.
+
+        Args:
+            density (float): The density of the environment.
+            speed (float): The speed of the entity in the environment.
+            variance (float): The variance in the environment.
+            movement_uniformity (float): The uniformity of movement in the environment.
+            pose_variance (float): The variance in the entity's pose.
+
+        Returns:
+            tuple: A tuple containing five integers representing the state bins for
+                density, speed, variance, movement uniformity, and pose variance,
+                respectively. Each bin is an integer derived from discretizing the input
+                parameter into a range of possible values.
+        """
+
         density_bin = int(min(density * 1000, 50) // 10)
         speed_bin = int(min(speed, 50) // 10)
         variance_bin = int(min(variance, 100) // 20)
@@ -66,6 +100,20 @@ class QLearningAgent:
         return self.q_table.get((state, action), 0.0)
 
     def choose_action(self, state):
+        """Choose an action based on the current state using epsilon-greedy
+        strategy.
+
+        This function selects an action randomly with probability `epsilon` to
+        explore, or chooses the action with the highest Q-value with probability
+        `1 - epsilon` to exploit.
+
+        Args:
+            state (object): The current state of the environment.
+
+        Returns:
+            str: The chosen action based on the epsilon-greedy strategy.
+        """
+
         if random.random() < self.epsilon:
             return random.choice(self.actions)
         else:
@@ -73,6 +121,19 @@ class QLearningAgent:
             return self.actions[np.argmax(q_values)]
 
     def update_q_table(self, state, action, reward, next_state):
+        """Update the Q-table based on the Bellman equation.
+
+        This function updates the Q-value for a given state-action pair using
+        the Bellman equation. It calculates the maximum Q-value for the next
+        state and uses it to adjust the current Q-value.
+
+        Args:
+            state (tuple): The current state of the environment.
+            action (int): The action taken in the current state.
+            reward (float): The reward received after taking the action.
+            next_state (tuple): The resulting state after taking the action.
+        """
+
         old_q = self.get_q_value(state, action)
         next_max_q = max([self.get_q_value(next_state, a) for a in self.actions])
         new_q = old_q + self.lr * (reward + self.gamma * next_max_q - old_q)
@@ -86,6 +147,27 @@ class DecisionAgent:
         self.escalation_cooldown = 300  # Frames (e.g., 10 seconds at 30 FPS)
 
     def decide_action(self, rule_behavior, lstm_behavior, frame_count):
+        """Decide the appropriate action based on the current behavior of rule-
+        based and LSTM models.
+
+        This method evaluates the combined behavior from both rule-based and
+        LSTM models. If the current behavior indicates an emergency situation
+        (e.g., Stampede), it escalates the alert level and triggers specific
+        actions such as activating emergency protocols, notifying authorities,
+        and dispatching medical teams. For less critical situations (e.g.,
+        Aggressive or Dispersing), it adjusts the alert level accordingly. For
+        normal behavior, it resets to a normal alert level.
+
+        Args:
+            rule_behavior (str): The current behavior determined by the rule-based model.
+            lstm_behavior (str): The current behavior determined by the LSTM model.
+            frame_count (int): The current frame count for tracking time since the last escalation.
+
+        Returns:
+            str or None: A string describing the action to be taken, or None if no
+                action is needed.
+        """
+
         current_behavior = lstm_behavior if lstm_behavior != "Unknown" else rule_behavior
         if frame_count - self.last_escalation_frame < self.escalation_cooldown:
             return None  # Prevent frequent escalations
@@ -174,6 +256,22 @@ class CrowdManagementChatbot:
         }
     
     def recognize_intent(self, message):
+        """Recognize the user's intent based on a given message.
+
+        This function processes the input message to determine which predefined
+        intent it corresponds to. It iterates through a dictionary of intents
+        where each key is an intent and the value is a list of patterns that can
+        match the intent. If any pattern from a list matches a substring in the
+        message, the corresponding intent is returned. If no match is found,
+        "general" is returned.
+
+        Args:
+            message (str): The user input message to analyze.
+
+        Returns:
+            str: The recognized intent or "general" if no specific intent matches.
+        """
+
         message = message.lower()
         for intent, patterns in self.intents.items():
             for pattern in patterns:
@@ -182,6 +280,23 @@ class CrowdManagementChatbot:
         return "general"
     
     def get_response(self, message, crowd_data):
+        """Get a response based on the message and crowd data.
+
+        This function processes the given message to determine the intent and
+        then returns an appropriate response. The response can vary based on the
+        intent, such as greeting, status update, help request, action request,
+        or general response. The behavior of the crowd and number of people are
+        also considered for personalized responses.
+
+        Args:
+            message (str): The input message from a user or system.
+            crowd_data (dict): A dictionary containing information about the crowd, including behavior
+                and number of people.
+
+        Returns:
+            str: An appropriate response based on the intent and crowd data.
+        """
+
         intent = self.recognize_intent(message)
         behavior = crowd_data.get("behavior", "Calm")
         num_people = crowd_data.get("num_people", 0)
@@ -230,6 +345,21 @@ with tab1:
 
     # Function to generate heatmap
     def generate_heatmap(frame, centroids, intensity_factor=50):
+        """Generate a heatmap based on given centroids and intensity factor.
+
+        This function creates a heatmap by placing circles at specified
+        centroids within a frame. The heatmap is then blurred and color-mapped
+        to produce a visually appealing representation.
+
+        Args:
+            frame (numpy.ndarray): The input frame where the heatmap will be generated.
+            centroids (list of tuples): A list of (x, y) coordinates indicating the positions of centroids.
+            intensity_factor (int?): Factor determining the intensity of each centroid circle. Default is 50.
+
+        Returns:
+            numpy.ndarray: A color-mapped heatmap image.
+        """
+
         heatmap = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.float32)
         for x, y in centroids:
             cv2.circle(heatmap, (x, y), 30, intensity_factor, -1)
@@ -240,6 +370,27 @@ with tab1:
 
     # Function to process frame with pose detection
     def process_frame(frame, prev_positions, density_history, speed_history, pose_history, time_history, frame_count, rl_agent, thresholds):
+        """Analyzes a video frame to detect crowd behavior and provide insights.
+
+        This function processes a single frame from a video stream to determine
+        crowd density, speed, and pose variance. It then applies rule-based
+        analysis and uses an LSTM model for predictive analysis of crowd
+        behavior. The function outputs the annotated frame, key metrics (people
+        count, density, speed, pose variance), detected behaviors (rule-based
+        and LSTM predictions), a plot showing trends over time, and the current
+        frame count.
+
+        Args:
+            frame (np.ndarray): A single video frame as a NumPy array in BGR format.
+
+        Returns:
+            tuple: Contains the annotated frame with detections, number of people,
+                crowd density, average speed, pose variance, detected behaviors
+                from rule-based analysis and LSTM model, a plot showing trends over
+                time,
+                and the current frame count.
+        """
+
         # Object detection
         results = yolo_model(frame)
         filtered_boxes = [box for box in results[0].boxes if int(box.cls) == 0]  # Class 0 is "person"
